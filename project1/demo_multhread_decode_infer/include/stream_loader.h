@@ -25,7 +25,7 @@ extern "C"
 #include <condition_variable>
 using std::queue;
 using std::vector;
-#include "m_buffer.h"
+#include "m_buffer.hpp"
 
 #define display 0
 
