@@ -1,0 +1,3 @@
+项目1 ：从第一个开始看，看到第三个就行，后面的两个是优化，优化的部分，后面会做具体讲解。
+项目2：是推流至国标GB28181平台模块（推流等都是自己封装的，可以仔细看看）
+项目1进去可以闲云新./buildDemo.sh，下载库，然后cd multhread_decode_infer_mulmodel，mkdir build,cd build,cmake..,make -j16

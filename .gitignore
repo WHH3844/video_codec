@@ -1,0 +1,29 @@
+# CMake / build
+build/
+build*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+
+# Compiled objects / libraries
+*.o
+*.a
+*.so
+*.so.*
+
+# Video / generated test data
+*.mp4
+*.mjpeg
+*.h264
+*.ps
+
+# Archives
+*.tar.gz
+*.zip
+
+# Models
+*.rknn
+*.onnx
+
+# Editor
+.vscode/
