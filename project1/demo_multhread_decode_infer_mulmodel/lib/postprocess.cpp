@@ -22,6 +22,7 @@
 #include <sys/time.h>
 
 #include <set>
+#include <mutex>
 #include <vector>
 #define LABEL_NALE_TXT_PATH "../../model/coco_80_labels_list.txt"
 
@@ -97,8 +98,7 @@ int readLines(const char *fileName, char *lines[], int max_line)
 int loadLabelName(const char *locationFilename, char *label[], int class_num)
 {
     printf("loadLabelName %s\n", locationFilename);
-    readLines(locationFilename, label, class_num);
-    return 0;
+    return readLines(locationFilename, label, class_num) == class_num ? 0 : -1;
 }
 
 static float CalculateOverlap(float xmin0, float ymin0, float xmax0, float ymax0, float xmin1, float ymin1, float xmax1,
@@ -284,19 +284,16 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
                  float nms_threshold, float scale_w, float scale_h, std::vector<int32_t> &qnt_zps,
                  std::vector<float> &qnt_scales, detect_result_group_t *group, int class_num)
 {
-    static int init = -1;
-    if (init == -1)
-    {
-        int ret = 0;
-        ret = loadLabelName(LABEL_NALE_TXT_PATH, labels, class_num);
-        if (ret < 0)
-        {
-            return -1;
-        }
-
-        init = 0;
+    // Multiple model workers enter here concurrently; publish labels only after loading.
+    static std::once_flag label_once;
+    static int label_status = -1;
+    std::call_once(label_once, [class_num]() {
+        label_status = loadLabelName(LABEL_NALE_TXT_PATH, labels, class_num);
+    });
+    group->count = 0;
+    if (label_status < 0) {
+        return -1;
     }
-    // memset(group, 0, sizeof(detect_result_group_t));
 
     std::vector<float> filterBoxes;
     std::vector<float> objProbs;
@@ -379,7 +376,9 @@ int post_process(int8_t *input0, int8_t *input1, int8_t *input2, int model_in_h,
         group->results[last_count].box.bottom = (int)(clamp(y2, 0, model_in_h) / scale_h); // 限制下边界值并进行比例缩放
 
 
-        strncpy(group->results[last_count].name, labels[0], OBJ_NAME_MAX_SIZE);
+        group->results[last_count].prop = obj_conf;
+        strncpy(group->results[last_count].name, labels[0], OBJ_NAME_MAX_SIZE - 1);
+        group->results[last_count].name[OBJ_NAME_MAX_SIZE - 1] = '\0';
 
         // 增加有效检测结果的计数
         last_count++;

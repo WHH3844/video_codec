@@ -58,6 +58,7 @@ private:
     int             bitrate_;
     MppCodingType   mpp_type_;
     bool            initialized_;
+    bool            rga_color_available_ = true;
 
     // 预分配的 YUV 缓冲区，避免每帧 malloc/free
     uint8_t*        yuv_buffer_;

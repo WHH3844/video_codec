@@ -120,17 +120,17 @@ target_link_libraries(myDemo
 )
 
 # ================= 运行期 so 搜索路径（关键） =================
-# 构建RPATH列表（全部使用本地路径 + 系统库路径用于x264/x265）
+# 使用相对可执行文件的路径，部署到不同目录不依赖开发机绝对路径
 set(RUNTIME_RPATH_LIST
-    ${FFMPEG_LIB_DIR}
-    ${OPENCV_LIB_DIR}
-    ${RKNN_API_PATH}/lib
-    ${MPP_PATH}/lib
-    ${RGA_PATH}/lib
-    /usr/lib/aarch64-linux-gnu  # 系统库路径，用于x264/x265
+    "$ORIGIN/../../ffmpeg-lite/lib"
+    "$ORIGIN/../../opencv4-1/lib"
+    "$ORIGIN/../../rknn/lib"
+    "$ORIGIN/../../mpp/lib"
+    "$ORIGIN/../../rga/lib"
 )
 
 set_target_properties(myDemo PROPERTIES
+    BUILD_WITH_INSTALL_RPATH TRUE
     BUILD_RPATH "${RUNTIME_RPATH_LIST}"
     INSTALL_RPATH "${RUNTIME_RPATH_LIST}"
 )

@@ -9,6 +9,7 @@
 
 #include <iostream>
 #include <cstring>
+#include <cstdlib>
 #include <chrono>
 #include <thread>
 #include "stream_loader.h"
@@ -40,11 +41,12 @@ DetectionFusionManager fusion_manager;
 
 void combineImage(StreamLoaderManager &manager)
 {
-    cv::Mat combinedImage(1080, 1280, CV_8UC3, cv::Scalar(0, 0, 0)); // 初始化为黑色
+    const int canvas_height = ((manager.num_stream + 1) / 2) * 360;
+    cv::Mat combinedImage(canvas_height, 1280, CV_8UC3, cv::Scalar(0, 0, 0)); // 初始化为黑色
     cv::Mat lastCombinedImage; // 保存最后一帧
     bool hasLastFrame = false;
     const int target_fps = 24; // 目标帧率
-    const int frame_interval_ms = 1000 / target_fps; // 每帧间隔（毫秒）
+    const auto frame_interval = std::chrono::microseconds(1000000 / target_fps);
     const int tile_w = 640, tile_h = 360;
     const size_t tile_size = static_cast<size_t>(tile_w) * tile_h * 3;
     struct DmaTileBuffer {
@@ -54,22 +56,21 @@ void combineImage(StreamLoaderManager &manager)
     };
     std::vector<DmaTileBuffer> tile_buffers(manager.num_stream);
     for (int i = 0; i < manager.num_stream; ++i) {
-        if (dma_buf_alloc(DMA_HEAP_PATH, tile_size, &tile_buffers[i].fd, &tile_buffers[i].va) == 0) {
+        if (dma_buf_alloc(DMA_HEAP_PATH, tile_size, &tile_buffers[i].fd, &tile_buffers[i].va) == 0)
+        {
             tile_buffers[i].view = cv::Mat(tile_h, tile_w, CV_8UC3, tile_buffers[i].va);
         }
     }
-    auto last_frame_time = std::chrono::steady_clock::now();
+    auto next_frame_time = std::chrono::steady_clock::now();
     
     while (true)
     {
-        auto current_time = std::chrono::steady_clock::now();
-        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_time - last_frame_time).count();
-        
-        if (elapsed < frame_interval_ms) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(frame_interval_ms - elapsed));
-            current_time = std::chrono::steady_clock::now();
+        next_frame_time += frame_interval;
+        std::this_thread::sleep_until(next_frame_time);
+        const auto current_time = std::chrono::steady_clock::now();
+        if (current_time > next_frame_time + frame_interval) {
+            next_frame_time = current_time;
         }
-        last_frame_time = current_time;
         
         bool hasNewFrame = false;
 
@@ -149,7 +150,7 @@ void rknn_infer(rknn_lite *p1, rknn_lite *p2, rknn_lite *p3, rknn_lite *p4, int 
 
     // 跳帧推理：每 INFER_INTERVAL 帧做一次完整推理，中间帧复用上一帧检测结果，提高实时性
     const int INFER_INTERVAL = 2; 
-    int frame_count = 0;
+    int frame_count = 0;//初始化计数器
     std::vector<FusedDetection> last_fused;
 
     while (!manager.stream_loaders[i]->stopFlag)
@@ -195,17 +196,35 @@ void rknn_infer(rknn_lite *p1, rknn_lite *p2, rknn_lite *p3, rknn_lite *p4, int 
 
 int main(int argc, char *argv[])
 {
-    manager.num_stream = std::stoi(argv[1]); // 获取输入视频流数量
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <streams: 1..6>" << std::endl;
+        return 1;
+    }
+    try {
+        size_t parsed = 0;
+        manager.num_stream = std::stoi(argv[1], &parsed);
+        if (parsed != std::strlen(argv[1]) || manager.num_stream < 1 || manager.num_stream > 6) {
+            throw std::invalid_argument("stream count");
+        }
+    } catch (const std::exception&) {
+        std::cerr << "Stream count must be an integer from 1 to 6" << std::endl;
+        return 1;
+    }
+    // Keep the loader vector stable while inference workers read it.
+    manager.stream_loaders.reserve(manager.num_stream);
     
     // 初始化推流配置
     StreamingConfig stream_config;
     stream_config.rtmp_url = "rtmp://192.168.1.28/live/livestream"; // 替换为实际的RTMP地址
+    if (const char* url = std::getenv("PROJECT1_RTMP_URL")) {
+        stream_config.rtmp_url = url;
+    }
     stream_config.width = 1280;
-    stream_config.height = 720;
+    stream_config.height = ((manager.num_stream + 1) / 2) * 360;
     stream_config.fps = 24;
     stream_config.bitrate = 2000000;
     stream_config.enable_rtmp = true;
-    stream_config.draw_detections = true;
+    stream_config.draw_detections = false; // 各路已绘制检测结果，拼接帧没有独立检测计数
     
     // 初始化推流管理器
     if (!streaming_manager.initialize(stream_config)) {

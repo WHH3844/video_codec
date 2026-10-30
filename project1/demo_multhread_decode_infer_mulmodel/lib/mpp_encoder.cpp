@@ -216,8 +216,8 @@ int MppEncoder::Encode(uint8_t* yuv_data, int yuv_size, uint8_t* packet_data, in
 
     MPP_RET ret = MPP_OK;
     MppFrame frame = NULL;
-    MppPacket packet = NULL;
-    MppBuffer buffer = NULL;
+    MppPacket packet = NULL;//压缩后的数据
+    MppBuffer buffer = NULL;//原始图像数据
 
     ret = mpp_frame_init(&frame);
     if (ret != MPP_OK) {

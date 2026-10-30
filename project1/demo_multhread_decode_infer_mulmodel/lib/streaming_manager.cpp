@@ -121,9 +121,6 @@ void StreamingManager::stopStreaming() {
 }
 
 void StreamingManager::streamingWorker() {
-    cv::Mat last_frame;  // 保存最后一帧，用于超时情况
-    bool has_last_frame = false;
-    
     while (!should_stop_.load()) {
         StreamingData data;
         bool got_data = false;
@@ -131,33 +128,19 @@ void StreamingManager::streamingWorker() {
         // 等待数据，使用超时机制防止连接超时
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
-            auto timeout = std::chrono::milliseconds(1000 / config_.fps);  // 按帧率计算超时时间
-            if (queue_cv_.wait_for(lock, timeout, [this] { 
-                return !streaming_queue_.empty() || should_stop_.load(); 
-            })) {
-                if (should_stop_.load()) {
-                    break;
-                }
-                
-                if (!streaming_queue_.empty()) {
-                    data = streaming_queue_.front();
-                    streaming_queue_.pop();
-                    got_data = true;
-                }
-            } else {
-                if (has_last_frame && !last_frame.empty()) {
-                    data.frame = last_frame.clone();
-                    data.stream_id = 0;
-                    data.timestamp = std::chrono::system_clock::now();
-                    memset(&data.person_results, 0, sizeof(detect_result_group_t));
-                    memset(&data.helmet_results, 0, sizeof(detect_result_group_t));
-                    memset(&data.tired_results, 0, sizeof(detect_result_group_t));
-                    memset(&data.callplay_results, 0, sizeof(detect_result_group_t));
-                    got_data = true;
-                } else {
-                    continue;
-                }
+            // combineImage already repeats the last image at the configured rate.
+            // A second timeout producer here would inject extra frames and overload readers.
+            if (!queue_cv_.wait_for(lock, std::chrono::seconds(1), [this] {
+                    return !streaming_queue_.empty() || should_stop_.load();
+                })) {
+                continue;
             }
+            if (should_stop_.load()) {
+                break;
+            }
+            data = streaming_queue_.front();
+            streaming_queue_.pop();
+            got_data = true;
         }
         
         if (!got_data) {
@@ -171,8 +154,6 @@ void StreamingManager::streamingWorker() {
             frame = data.frame.clone();
         }
 
-        last_frame = frame.clone();
-        has_last_frame = true;
         
         if (config_.draw_detections) {
             drawDetections(frame, data);
